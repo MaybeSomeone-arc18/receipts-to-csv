@@ -22,7 +22,11 @@ function buildRows(lines){
 const STRONG=/grand\s*total|total\s*(bayar|amount|due|payable|jumlah|harga|belanja|tagihan)|amount\s*(due|payable)|balance\s*due|jumlah\s*(bayar|tagihan)|net\s*(total|amount)|total\s*rp/i;
 const PLAIN=/\btotal\b|\btot\b|jumlah|\bamount\b/i;
 const NOT=/sub\s*-?\s*total|subtotal|total\s*(disc|diskon|discount|tax|pajak|service|item|qty|saving|point|potongan|kembali|change)|disc(ount)?\s*total|tax\s*total|change|kembali|tunai|cash|tender|bayar\s*tunai|\bqty\b|\bitems?\b/i;
-const TAXRE=/\b(tax|pajak|ppn|pb\s?1|gst|vat|service\s*charge)\b/i;
+const TAXRE=/\b(tax|pajak|ppn|pb\s?1|gst|vat)\b/i;
+const SERVRE=/\b(service(\s*charge)?|serv\.?|svc|s\/c)\b/i;
+const CASHRE=/\b(cash|tunai|tender(ed)?|bayar|paid|card|kartu|debit|credit)\b/i;
+const CHGRE=/\b(change|kembali(an)?)\b/i;
+const SUBRE=/sub\s*-?\s*total/i;
 function pickAmount(rows,ri,labelRe){
   const r=rows[ri];
   // amounts on the same row, to the right of the label text
@@ -67,10 +71,19 @@ function findDate(rows){
   return null;
 }
 function findTax(rows){
-  for(let i=0;i<rows.length;i++){const r=rows[i];if(!TAXRE.test(r.text)||/total/i.test(r.text)&&!/tax/i.test(r.text))continue;
+  for(let i=0;i<rows.length;i++){const r=rows[i];if(!TAXRE.test(r.text)||SERVRE.test(r.text)&&!TAXRE.test(r.text)||/total/i.test(r.text)&&!/tax/i.test(r.text))continue;
     const p=pickAmount(rows,i,TAXRE);if(p)return {value:p.a.value,text:p.a.text,conf:p.conf,reasons:[]}}
   return null;
 }
+function findLabeled(rows,re,skipRe){
+  for(let i=0;i<rows.length;i++){const r=rows[i];if(!re.test(r.text)||(skipRe&&skipRe.test(r.text)))continue;
+    const p=pickAmount(rows,i,re);if(p)return {value:p.a.value,text:p.a.text,conf:p.conf,reasons:[]}}
+  return null;
+}
+const CUR=[[/\b(rp\.?|idr)\b/i,'IDR'],[/\busd\b|US\$/i,'USD'],[/\beur\b|€/i,'EUR'],[/\bgbp\b|£/i,'GBP'],[/\binr\b|₹|\brs\.?\s?\d/i,'INR'],[/\bsgd\b|S\$/,'SGD'],[/\bmyr\b|\brm\s?\d/i,'MYR'],[/\$/,'USD?']];
+function findCurrency(rows){const t=rows.map(r=>r.text).join('\n');
+  for(const [re,c] of CUR){if(re.test(t))return {value:c.replace('?',''),text:c,conf:c.endsWith('?')?0.5:0.9,reasons:c.endsWith('?')?['a $ sign was seen, but $ is used by many currencies']:[]}}
+  return null}
 function findVendor(rows,h){
   const top=rows.filter(r=>r.y0<h*0.33).slice(0,8);
   for(const r of top){const t=r.text.replace(/[^A-Za-z0-9&' .,-]/g,' ').replace(/\s+/g,' ').trim();
@@ -86,7 +99,18 @@ function extract(lines,w,h){
   if(total){const SKIP=/cash|change|tunai|kembali|bayar|tender|paid|card|credit|debit|visa|master|disc|qty|\bno\b/i;let big=0;
     rows.forEach((r,i)=>{if(i===total.row||SKIP.test(r.text))return;for(const a of amountsIn(r.text))if(a.value>big)big=a.value});
     if(big>total.value)total.reasons.push('a bigger amount ('+big+') appears elsewhere on the receipt, so the total may be misread')}
-  return {vendor,date,total,tax,rows:rows.map(r=>r.text)};
+  const sub=findLabeled(rows,SUBRE),svc=findLabeled(rows,SERVRE,TAXRE),cash=findLabeled(rows,CASHRE,SUBRE),chg=findLabeled(rows,CHGRE),currency=findCurrency(rows);
+  // Cross-check: a total is believable when it equals cash minus change, or subtotal + tax + service.
+  const exp=[];if(cash&&chg&&cash.value>chg.value)exp.push({v:cash.value-chg.value,how:'cash paid minus change'});
+  if(sub)exp.push({v:Math.round((sub.value+(tax?tax.value:0)+(svc?svc.value:0))*100)/100,how:'subtotal + tax + service'});
+  let check=null;
+  if(exp.length){const all=new Set();rows.forEach(r=>amountsIn(r.text).forEach(a=>all.add(a.value)));
+    const hit=total&&exp.find(e=>e.v===total.value);
+    if(hit){total.verified=hit.how;total.reasons=total.reasons.filter(x=>!/bigger amount/.test(x))}
+    else{const alt=exp.find(e=>all.has(e.v));
+      if(alt&&total){total.replacedFrom=total.value;total.value=alt.v;total.text=String(alt.v);total.verified=alt.how;total.reasons=['changed from '+total.replacedFrom+' because this amount equals '+alt.how+' and the first guess did not']}
+      else if(total)total.reasons.push('does not match '+exp.map(e=>e.how+' ('+e.v+')').join(' or ')+': check the total')}}
+  return {vendor,date,total,tax,currency,service:svc,rows:rows.map(r=>r.text)};
 }
 const api={extract,amountsIn,amountValue,buildRows};
 if(typeof module!=='undefined')module.exports=api;else root.Extract=api;
