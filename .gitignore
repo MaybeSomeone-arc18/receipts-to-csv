@@ -1,0 +1,7 @@
+node_modules/
+data/
+shots/
+draft/
+public/vendor/
+NOTES.md
+test/cord_raw.json
