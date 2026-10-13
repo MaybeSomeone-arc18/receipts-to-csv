@@ -19,13 +19,19 @@ function buildRows(lines){
   for(const l of L){const r=rows[rows.length-1];
     if(r&&Math.abs(l.yc-r.yc)<Math.max(l.h,r.h)*0.55){r.parts.push(l);r.yc=r.parts.reduce((s,p)=>s+p.yc,0)/r.parts.length;r.h=Math.max(r.h,l.h)}
     else rows.push({parts:[l],yc:l.yc,h:l.h})}
-  for(const r of rows){r.parts.sort((a,b)=>a.x0-b.x0);r.text=r.parts.map(p=>p.text).join('  ');r.conf=Math.min(...r.parts.map(p=>p.conf));r.y0=Math.min(...r.parts.map(p=>p.y0))}
+  for(const r of rows){r.parts.sort((a,b)=>a.x0-b.x0);
+    for(const p of r.parts)p.text=p.text.replace(/(\d)\s?[:\uFF1A](\d{3})(?!\d)/g,'$1.$2');
+    // a thousands group sometimes comes back as two boxes ("33." then "000", or "261 ±" then "333"): glue them
+    for(let k=0;k+1<r.parts.length;k++){const a=r.parts[k],b=r.parts[k+1];
+      const ma=/^(.*?\d{1,3})\s*([.,±:;'`])\s*$/.exec(a.text),mb=/^[\dOo]{3}$/.test(b.text.trim())&&/\d/.test(b.text);
+      if(ma&&mb&&/(^|[^\d])\d{1,3}$/.test(ma[1])&&b.x0-a.x1<a.h*3){const sep=/[.,]/.test(ma[2])?ma[2]:',';a.text=ma[1]+sep+b.text.trim().replace(/[Oo]/g,'0');a.x1=b.x1;a.conf=Math.min(a.conf,b.conf);r.parts.splice(k+1,1);k--}}
+r.text=r.parts.map(p=>p.text).join('  ');r.conf=Math.min(...r.parts.map(p=>p.conf));r.y0=Math.min(...r.parts.map(p=>p.y0))}
   return rows;
 }
 const STRONG=/grand\s*total|total\s*(bayar|amount|due|payable|jumlah|harga|belanja|tagihan)|amount\s*(due|payable)|balance\s*due|jumlah\s*(bayar|tagihan)|net\s*(total|amount)|total\s*rp/i;
-const PLAIN=/\btotal\b|\btot\b|jumlah|\bamount\b/i;
+const PLAIN=/\btotal\b|\bTL\b|\btot\b|jumlah|\bamount\b/i;
 const NOT=/sub\s*-?\s*total|subtotal|total\s*(disc|diskon|discount|tax|pajak|service|item|qty|saving|point|potongan|kembali|change)|disc(ount)?\s*total|tax\s*total|change|kembali|tunai|cash|tender|bayar\s*tunai|\bqty\b|\bitems?\b/i;
-const TAXRE=/\b(tax|pajak|ppn|pb\s?1|gst|vat)\b/i;
+const TAXRE=/\b(tax|pajak|ppn|pb\s?[1il]|gst|vat)\b|resto\b/i;
 const SERVRE=/\b(service(\s*charge)?|serv\.?|svc|s\/c)\b/i;
 const CASHRE=/\b(cash|tunai|tender(ed)?|bayar|paid|card|kartu|debit|credit)\b/i;
 const CHGRE=/\b(change|kembali(an)?)\b/i;
@@ -103,17 +109,28 @@ function extract(lines,w,h,opts){
   if(total){const SKIP=/cash|change|tunai|kembali|bayar|tender|paid|card|credit|debit|visa|master|disc|qty|\bno\b/i;let big=0;
     rows.forEach((r,i)=>{if(i===total.row||SKIP.test(r.text))return;for(const a of amountsIn(r.text))if(a.value>big)big=a.value});
     if(big>total.value)total.reasons.push('a bigger amount ('+big+') appears elsewhere on the receipt, so the total may be misread')}
+  if(total){const tr=rows[total.row];const am=amountsIn(tr.text);
+    if(am.length>=2){const allv=new Set();rows.forEach((r,i)=>{if(i!==total.row||true)amountsIn(r.text).forEach(a=>allv.add(a.value))});
+      const rest=new Set();rows.forEach((r,i)=>{if(CHGRE.test(r.text)||CASHRE.test(r.text))amountsIn(r.text).forEach(a=>rest.add(a.value))});
+      const hit=am.find(x=>am.some(y=>y.value>x.value&&rest.has(y.value-x.value)));
+      if(hit&&hit.value!==total.value){total.replacedFrom=total.value;total.value=hit.value;total.text=hit.text;total.reasons=['the total line also showed '+total.replacedFrom+', but '+total.replacedFrom+' minus '+hit.value+' is printed as change, so '+hit.value+' was used: check it']}}}
+  if(total){for(const r of rows){if(!(CASHRE.test(r.text)&&/\b(change|kembali(an)?|charge)\b/i.test(r.text)))continue;const am=amountsIn(r.text);if(am.length!==2)continue;
+      const hi=Math.max(am[0].value,am[1].value),lo=Math.min(am[0].value,am[1].value),v=hi-lo;
+      const printed=rows.some(q=>q!==r&&amountsIn(q.text).some(x=>x.value===v));
+      if(printed&&total.value===hi){total.replacedFrom=total.value;total.value=v;total.text=String(v);total.reasons=['the first guess ('+hi+') looks like cash handed over; cash minus change is '+v+' and that is printed on the receipt, so it was used: check it'];break}}}
   const sub=findLabeled(rows,SUBRE),svc=findLabeled(rows,SERVRE,TAXRE),cash=findLabeled(rows,CASHRE,SUBRE),chg=findLabeled(rows,CHGRE),currency=findCurrency(rows);
   // Cross-check: a total is believable when it equals cash minus change, or subtotal + tax + service.
   const exp=[];if(cash&&chg&&cash.value>chg.value)exp.push({v:cash.value-chg.value,how:'cash paid minus change'});
-  if(sub)exp.push({v:Math.round((sub.value+(tax?tax.value:0)+(svc?svc.value:0))*100)/100,how:'subtotal + tax + service'});
+  if(sub&&(tax||svc))exp.push({v:Math.round((sub.value+(tax?tax.value:0)+(svc?svc.value:0))*100)/100,how:'subtotal + tax + service'});
   let check=null;
-  if(exp.length){const all=new Set();rows.forEach(r=>amountsIn(r.text).forEach(a=>all.add(a.value)));
+  {const all=new Set();rows.forEach(r=>amountsIn(r.text).forEach(a=>all.add(a.value)));
     const hit=total&&exp.find(e=>e.v===total.value);
     if(hit){total.verified=hit.how;total.reasons=total.reasons.filter(x=>!/bigger amount/.test(x))}
     else{const alt=exp.find(e=>all.has(e.v));
       if(alt&&total){total.replacedFrom=total.value;total.value=alt.v;total.text=String(alt.v);total.verified=alt.how;total.reasons=['changed from '+total.replacedFrom+' because this amount equals '+alt.how+' and the first guess did not']}
-      else if(total)total.reasons.push('does not match '+exp.map(e=>e.how+' ('+e.v+')').join(' or ')+': check the total')}}
+      else if(total&&(tax||svc)&&!hit&&(()=>{const v=Math.round((total.value+(tax?tax.value:0)+(svc?svc.value:0))*100)/100;return v!==total.value&&all.has(v)&&!(sub&&v===sub.value)})()){const v=Math.round((total.value+(tax?tax.value:0)+(svc?svc.value:0))*100)/100;total.replacedFrom=total.value;total.value=v;total.text=String(v);total.reasons=['the first guess ('+total.replacedFrom+') plus the tax/service line equals another printed amount ('+v+'), so that was used: check it']}
+      else if(total&&sub&&total.value<sub.value&&exp.length&&exp[exp.length-1].how==='subtotal + tax + service'){const e=exp[exp.length-1];total.replacedFrom=total.value;total.value=e.v;total.text=String(e.v);total.reasons=['the first guess ('+total.replacedFrom+') is smaller than the subtotal, so it was replaced with subtotal + tax + service ('+e.v+'): check it']}
+      else if(total&&exp.length)total.reasons.push('does not match '+exp.map(e=>e.how+' ('+e.v+')').join(' or ')+': check the total')}}
   return {vendor,date,total,tax,currency,service:svc,rows:rows.map(r=>r.text)};
 }
 const api={extract,amountsIn,amountValue,buildRows};
