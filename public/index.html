@@ -46,6 +46,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #f5a524;outline-offse
 <div id="resultwrap" hidden>
 <h2>2. Check what was read</h2>
 <p>The tool can misread, especially blurry or crumpled receipts. <span class="tag warn">Please check</span> fields are the ones it is less sure about. Tap a picture to see it bigger. Amounts are plain numbers: the currency is not read, so check it too. Fix anything wrong, then tick "I checked this".</p>
+<div class="row" id="queue" hidden><button id="next">Next receipt to check</button><span id="qtxt" class="mute"></span></div>
+<p class="mute" id="bv" hidden><label>Same shop for receipts with a blank vendor (optional): <input id="bvin" placeholder="shop name" maxlength="80"></label> <button class="sec" id="bvgo">Fill blank vendors</button></p>
 <div id="cards"></div>
 <h2>3. Download</h2>
 <div class="row"><button id="dl">Download spreadsheet (CSV)</button><button id="clear" class="sec">Start over</button></div>
@@ -102,12 +104,21 @@ function render(){
   const need=Object.values(S).filter(s=>s.warn).length;
   const L={vendor:'Vendor (shop name)',date:'Date (YYYY-MM-DD)',total:'Total',tax:'Tax (if shown)',currency:'Currency (3 letters, e.g. USD)'};
   const inp=k=>`<label class="f ${S[k].warn&&(k!=='tax'||it.ex.tax||S[k].bad)?'check':''}">${L[k]}<input data-n="${n}" data-k="${k}" value="${esc(S[k].val)}" ${k==='total'||k==='tax'?'inputmode="decimal"':''}>${S[k].warn&&(k!=='tax'||it.ex.tax||S[k].bad)?`<span class="why">${esc(S[k].why)}</span>`:S[k].ok?`<span class="mute">${esc(S[k].ok)}</span>`:''}</label>`;
-  return `<div class="card ${need?'warn':''}"><img class="thumb" ${it.url?`src="${it.url}"`:'hidden'} alt="Picture of receipt ${esc(it.name)}" data-n="${n}">
+  it._need=need;return `<div id="card-${n}" class="card ${need?'warn':''}"><img class="thumb" ${it.url?`src="${it.url}"`:'hidden'} alt="Picture of receipt ${esc(it.name)}" data-n="${n}">
   <div><div><b>${esc(it.name)}</b> ${it.checked?'<span class="tag okk">You checked this (the notes stay for reference)</span>':need?`<span class="tag warn">Please check ${need} field${need>1?'s':''}</span>`:'<span class="tag okk">Read, still glance at it</span>'}</div>
   <div class="fields">${inp('vendor')}${inp('date')}${inp('total')}${inp('tax')}${inp('currency')}</div>
   <div class="row"><label class="chk"><input type="checkbox" data-c="${n}" ${it.checked?'checked':''}> I checked this</label><button class="sec" data-rm="${n}">Remove</button></div></div></div>`}).join('');
  const un=items.filter(i=>!i.checked).length;$('dlnote').textContent=items.length?(un?`${un} of ${items.length} receipts not ticked as checked. They will be marked "No" in the file.`:'All receipts ticked as checked.'):'';
+ const left=items.filter(i=>!i.checked),fl=left.filter(i=>i._need).length;
+ $('queue').hidden=!items.length;$('bv').hidden=!items.length;
+ $('qtxt').textContent=items.length?(left.length?`${left.length} of ${items.length} not ticked yet, ${fl} of them with fields to check. Not ticked does not mean right.`:'All ticked.'):'';
+ $('next').disabled=!left.length;
  save();window.__render=true}
+$('next').onclick=()=>{const left=items.map((it,n)=>({it,n})).filter(x=>!x.it.checked);if(!left.length)return;
+ const pick=left.find(x=>x.it._need)||left[0];const el=$('card-'+pick.n);if(!el)return;el.scrollIntoView({behavior:'smooth',block:'start'});
+ const inp=el.querySelector('input[data-k="total"]');if(inp)inp.focus({preventScroll:true})};
+$('bvgo').onclick=()=>{const v=$('bvin').value.trim();if(!v)return;let n=0;for(const it of items){const S=fieldState(it,'vendor');if(it.edited.vendor===undefined&&!String(S.val).trim()){it.edited.vendor=v;it.checked=false;n++}}
+ $('errs').textContent=n?`Filled ${n} blank vendor${n===1?'':'s'}. Vendors that were read or that you typed were not changed.`:'No blank vendors to fill.';render()};
 $('cards').addEventListener('change',e=>{const t=e.target;if(t.dataset.k!==undefined){const it=items[+t.dataset.n];it.edited[t.dataset.k]=t.value;it.checked=false;const wasFocus=t.dataset.n+t.dataset.k;render();const el=document.querySelector(`input[data-n="${t.dataset.n}"][data-k="${t.dataset.k}"]`);}
  if(t.dataset.c!==undefined){const it=items[+t.dataset.c];const bad=['date','total','tax','currency'].some(k=>it.edited[k]!==undefined&&invalid(k,it.edited[k]));if(bad&&t.checked){t.checked=false;alert('Fix the red-marked field first (see the note under it), then tick this.');return}it.checked=t.checked;render()}});
 $('cards').addEventListener('click',e=>{const t=e.target;if(t.dataset.rm!==undefined){const [x]=items.splice(+t.dataset.rm,1);URL.revokeObjectURL(x.url);render()}
