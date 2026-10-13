@@ -85,37 +85,38 @@ async function add(files){
  $('errs').innerHTML=errs.map(esc).join('<br>');window.__idle=true}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function invalid(k,v){v=String(v).trim();if(k==='total'||k==='tax')return v===''&&k==='tax'?'':(/^\d+(\.\d{1,2})?$/.test(v)?'':'Use digits only, like 12.50 (no currency sign, no commas, a dot for cents).');
+ if(k==='currency')return v===''||/^[A-Za-z]{3}$/.test(v)?'':'Use a 3-letter code, like IDR, USD or EUR.';
  if(k==='date')return v===''||/^\d{4}-\d{2}-\d{2}$/.test(v)&&!isNaN(Date.parse(v))?'':'Use the form YYYY-MM-DD, like 2026-10-13.';return ''}
 function fieldState(it,k){const f=it.ex[k];if(it.edited[k]!==undefined){const bad=invalid(k,it.edited[k]);return {val:it.edited[k],warn:!!bad,why:bad,edited:true,bad:!!bad}}
- if(!f)return {val:'',warn:true,why:'Not found. Type it in from the picture.'};
- const why=[...f.reasons];if(k==='tax'){why.push('tax is the least reliable field (right about half the time in our test): always check it');if(it.ex.total&&f.value>=it.ex.total.value)why.push('tax is not smaller than the total')}
+ if(!f)return k==='currency'?{val:'',warn:false}:{val:'',warn:true,why:'Not found. Type it in from the picture.'};
+ const why=[...f.reasons];if(f.verified==='cash paid minus change'&&k==='total')why.length=0;if(k==='tax'){why.push('tax is the least reliable field (right about half the time in our test): always check it');if(it.ex.total&&f.value>=it.ex.total.value)why.push('tax is not smaller than the total')}
  if(f.conf<0.9)why.push('the reader was not sure of this text');
  if(k==='total'||k==='tax'){if(/[.,]/.test(f.text)&&!/[.,]\d{2}$/.test(f.text)||/^\d{1,3}[.,]\d{3}$/.test(f.text))why.push(`printed as "${f.text}": check if that is ${f.value} or a decimal`)}
- return {val:k==='total'||k==='tax'?String(f.value):f.value,warn:why.length>0,why:why.join('; ')}}
+ return {val:k==='total'||k==='tax'?String(f.value):f.value,warn:why.length>0,why:why.join('; '),ok:k==='total'&&f.verified?(f.verified==='cash paid minus change'?'Matches cash paid minus change.':'Matches '+f.verified+', but tax or service may have been missed: still check.'):''}}
 function render(){
  $('resultwrap').hidden=!items.length;
- $('cards').innerHTML=items.map((it,n)=>{const S={};['vendor','date','total','tax'].forEach(k=>S[k]=fieldState(it,k));
+ $('cards').innerHTML=items.map((it,n)=>{const S={};['vendor','date','total','tax','currency'].forEach(k=>S[k]=fieldState(it,k));
   const need=Object.values(S).filter(s=>s.warn).length;
-  const L={vendor:'Vendor (shop name)',date:'Date (YYYY-MM-DD)',total:'Total',tax:'Tax (if shown)'};
-  const inp=k=>`<label class="f ${S[k].warn&&(k!=='tax'||it.ex.tax||S[k].bad)?'check':''}">${L[k]}<input data-n="${n}" data-k="${k}" value="${esc(S[k].val)}" ${k==='total'||k==='tax'?'inputmode="decimal"':''}>${S[k].warn&&(k!=='tax'||it.ex.tax||S[k].bad)?`<span class="why">${esc(S[k].why)}</span>`:''}</label>`;
+  const L={vendor:'Vendor (shop name)',date:'Date (YYYY-MM-DD)',total:'Total',tax:'Tax (if shown)',currency:'Currency (3 letters, e.g. USD)'};
+  const inp=k=>`<label class="f ${S[k].warn&&(k!=='tax'||it.ex.tax||S[k].bad)?'check':''}">${L[k]}<input data-n="${n}" data-k="${k}" value="${esc(S[k].val)}" ${k==='total'||k==='tax'?'inputmode="decimal"':''}>${S[k].warn&&(k!=='tax'||it.ex.tax||S[k].bad)?`<span class="why">${esc(S[k].why)}</span>`:S[k].ok?`<span class="mute">${esc(S[k].ok)}</span>`:''}</label>`;
   return `<div class="card ${need?'warn':''}"><img class="thumb" ${it.url?`src="${it.url}"`:'hidden'} alt="Picture of receipt ${esc(it.name)}" data-n="${n}">
   <div><div><b>${esc(it.name)}</b> ${it.checked?'<span class="tag okk">You checked this (the notes stay for reference)</span>':need?`<span class="tag warn">Please check ${need} field${need>1?'s':''}</span>`:'<span class="tag okk">Read, still glance at it</span>'}</div>
-  <div class="fields">${inp('vendor')}${inp('date')}${inp('total')}${inp('tax')}</div>
+  <div class="fields">${inp('vendor')}${inp('date')}${inp('total')}${inp('tax')}${inp('currency')}</div>
   <div class="row"><label class="chk"><input type="checkbox" data-c="${n}" ${it.checked?'checked':''}> I checked this</label><button class="sec" data-rm="${n}">Remove</button></div></div></div>`}).join('');
  const un=items.filter(i=>!i.checked).length;$('dlnote').textContent=items.length?(un?`${un} of ${items.length} receipts not ticked as checked. They will be marked "No" in the file.`:'All receipts ticked as checked.'):'';
  save();window.__render=true}
 $('cards').addEventListener('change',e=>{const t=e.target;if(t.dataset.k!==undefined){const it=items[+t.dataset.n];it.edited[t.dataset.k]=t.value;it.checked=false;const wasFocus=t.dataset.n+t.dataset.k;render();const el=document.querySelector(`input[data-n="${t.dataset.n}"][data-k="${t.dataset.k}"]`);}
- if(t.dataset.c!==undefined){const it=items[+t.dataset.c];const bad=['date','total','tax'].some(k=>it.edited[k]!==undefined&&invalid(k,it.edited[k]));if(bad&&t.checked){t.checked=false;alert('Fix the red-marked field first (see the note under it), then tick this.');return}it.checked=t.checked;render()}});
+ if(t.dataset.c!==undefined){const it=items[+t.dataset.c];const bad=['date','total','tax','currency'].some(k=>it.edited[k]!==undefined&&invalid(k,it.edited[k]));if(bad&&t.checked){t.checked=false;alert('Fix the red-marked field first (see the note under it), then tick this.');return}it.checked=t.checked;render()}});
 $('cards').addEventListener('click',e=>{const t=e.target;if(t.dataset.rm!==undefined){const [x]=items.splice(+t.dataset.rm,1);URL.revokeObjectURL(x.url);render()}
  if(t.classList.contains('thumb')){$('lb').querySelector('img').src=t.src;$('lb').style.display='flex'}});
 $('lb').onclick=()=>$('lb').style.display='none';document.addEventListener('keydown',e=>{if(e.key==='Escape')$('lb').style.display='none'});
 // CSV: every cell is quoted; text that a spreadsheet could run as a formula gets a leading apostrophe.
 function cell(v){let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'}
 function numCell(v){const s=String(v??'').trim();return /^\d+(\.\d+)?$/.test(s)?s:cell(v)}
-window.makeCsv=function(){const rows=[['File','Vendor','Date','Total','Tax','Checked by a person','Notes']];
- for(const it of items){const S={};['vendor','date','total','tax'].forEach(k=>S[k]=fieldState(it,k));
+window.makeCsv=function(){const rows=[['File','Vendor','Date','Total','Tax','Currency','Checked by a person','Notes']];
+ for(const it of items){const S={};['vendor','date','total','tax','currency'].forEach(k=>S[k]=fieldState(it,k));
   const notes=Object.entries(S).filter(([k,s])=>s.warn&&!(k==='tax'&&!it.ex.tax)).map(([k,s])=>k+': '+(s.why||'check')).join(' | ');
-  rows.push([cell(it.name),cell(S.vendor.val),cell(S.date.val),numCell(S.total.val),numCell(S.tax.val),it.checked?'Yes':'No',cell(it.checked?'':notes)])}
+  rows.push([cell(it.name),cell(S.vendor.val),cell(S.date.val),numCell(S.total.val),numCell(S.tax.val),cell(S.currency.val),it.checked?'Yes':'No',cell(it.checked?'':notes)])}
  return '\ufeff'+rows.map(r=>r.map((x,i)=>i===0&&typeof x==='string'&&x[0]!=='"'?cell(x):x).join(',')).join('\r\n')+'\r\n'}
 $('dl').onclick=()=>{const b=new Blob([makeCsv()],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='receipts.csv';document.body.appendChild(a);a.click();a.remove();window.__downloaded=true};
 function save(){try{sessionStorage.setItem('rcpt1',JSON.stringify(items.map(i=>({name:i.name,ex:i.ex,edited:i.edited,checked:i.checked,lines:i.lines}))))}catch(e){}}
