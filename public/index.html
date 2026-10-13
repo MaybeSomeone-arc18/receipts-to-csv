@@ -60,8 +60,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #f5a524;outline-offse
 import {ocrBlob} from './ocr.js';
 const $=id=>document.getElementById(id);let items=[];
 const MAXSIDE=1800;
-$('fmt').onchange=()=>{let n=0,skip=0;for(const it of items){if(it.ocr){it.ex=Extract.extract(it.ocr.lines,it.ocr.w,it.ocr.h,{decimal:$('fmt').value});it.edited={};it.checked=false;n++}else skip++}
- $('errs').textContent=`Amounts re-read as you chose for ${n} receipt${n===1?'':'s'}. Your typed edits on those were cleared.`+(skip?` ${skip} restored receipt${skip===1?'':'s'} could not be re-read (pictures are not kept); fix them by hand.`:'');render()};
+$('fmt').onchange=()=>{let n=0,skip=0;for(const it of items){if(it.ocr){it.ex=Extract.extract(it.ocr.lines,it.ocr.w,it.ocr.h,{decimal:$('fmt').value});n++}else skip++}
+ $('errs').textContent=`Amounts re-read as you chose for ${n} receipt${n===1?'':'s'}. Fields you typed yourself were kept as you typed them; check the others again.`+(skip?` ${skip} restored receipt${skip===1?'':'s'} could not be re-read (pictures are not kept); fix them by hand.`:'');render()};
 $('pick').onclick=()=>$('file').click();
 $('file').onchange=e=>{add([...e.target.files]);e.target.value=''};
 const drop=$('drop');['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('over')}));
