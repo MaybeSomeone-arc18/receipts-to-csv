@@ -1,0 +1,6 @@
+Declared 2026-10-14 00:01 IST BEFORE any OCR/score on this set.
+Set: CORD v2 train split, first 100 rows (t000-t099). Never used for tuning or looked at by me.
+Caveat: unseen by my pipeline, but may overlap the OCR model's training data. Not an independent out-of-domain test.
+Rules under test: extract.js v2 (sha1 fa79b04612), unchanged. A cash-vs-total candidate rule was tried on validation/dev and dropped (+1 on val, -1 on dev: no net gain).
+Exclusions declared up front: receipts whose truth total is missing or not parseable as a number (reported separately, not counted in the denominator).
+Metrics: exact total match; wrong-and-not-flagged count; flagged count; tax exact where truth tax exists.
