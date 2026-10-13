@@ -1,0 +1,20 @@
+{
+  "name": "receipts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@paddleocr/paddleocr-js": "^0.4.2",
+    "onnxruntime-web": "^1.30.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "puppeteer-core": "^25.13.0"
+  }
+}
