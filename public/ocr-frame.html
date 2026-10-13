@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><script type="module">
+import {ocrBlob} from './engine.js';
+addEventListener('message',async e=>{const {id,blob}=e.data||{};if(!id)return;
+  try{parent.postMessage({id,lines:await ocrBlob(blob)},'*')}catch(err){parent.postMessage({id,error:String(err&&err.message||err)},'*')}});
+parent.postMessage({ready:true},'*');
+</script>
