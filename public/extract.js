@@ -2,8 +2,11 @@
 // Every field says how sure it is. Nothing here is "read correctly" until a person has checked it.
 (function(root){
 const AMT=/(?<![\d])(?:\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)(?![\d])/g;
+let MODE='auto';
 function amountValue(tok){
   let t=tok.replace(/\s/g,'');
+  if(MODE==='dot'){const v=parseFloat(t.replace(/,/g,''));return v}
+  if(MODE==='comma'){const v=parseFloat(t.replace(/\./g,'').replace(',','.'));return v}
   if(/^\d{1,3}([.,]\d{3})+[.,]\d{1,2}$/.test(t)){const i=Math.max(t.lastIndexOf('.'),t.lastIndexOf(','));return parseFloat(t.slice(0,i).replace(/[.,]/g,'')+'.'+t.slice(i+1))}
   if(/^\d{1,3}([.,]\d{3})+$/.test(t))return parseInt(t.replace(/[.,]/g,''),10);
   if(/^\d+[.,]\d{1,2}$/.test(t))return parseFloat(t.replace(',','.'));
@@ -93,7 +96,8 @@ function findVendor(rows,h){
     return {value:t,text:t,conf:r.conf,reasons:['vendor is a guess: first plain text line near the top']}}
   return null;
 }
-function extract(lines,w,h){
+function extract(lines,w,h,opts){
+  MODE=(opts&&opts.decimal)||'auto';
   const rows=buildRows(lines);
   const total=findTotal(rows),date=findDate(rows),tax=findTax(rows),vendor=findVendor(rows,h||Math.max(...lines.map(l=>l.y1),1));
   if(total){const SKIP=/cash|change|tunai|kembali|bayar|tender|paid|card|credit|debit|visa|master|disc|qty|\bno\b/i;let big=0;
