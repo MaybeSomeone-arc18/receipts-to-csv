@@ -34,6 +34,7 @@ button:focus-visible,input:focus-visible{outline:3px solid #f5a524;outline-offse
 <p class="mute">Your pictures are read on this device and are not uploaded anywhere. The first time, it loads a reading model of roughly 60&nbsp;MB (a minute or more on slow internet; use wifi).</p>
 
 <h2>1. Add receipts</h2>
+<p><label>How are amounts printed on your receipts? <select id="fmt"><option value="auto">Not sure (guess, and flag it)</option><option value="dot">1,234.56 (dot before the cents)</option><option value="comma">1.234,56 (comma before the cents)</option></select></label></p>
 <div class="drop" id="drop">
  <p><button id="pick">Choose receipt pictures</button></p>
  <p class="mute">or drop them here. Photos or screenshots (JPG, PNG, WebP). Several at once is fine.</p>
@@ -59,6 +60,8 @@ button:focus-visible,input:focus-visible{outline:3px solid #f5a524;outline-offse
 import {ocrBlob} from './ocr.js';
 const $=id=>document.getElementById(id);let items=[];
 const MAXSIDE=1800;
+$('fmt').onchange=()=>{let n=0,skip=0;for(const it of items){if(it.ocr){it.ex=Extract.extract(it.ocr.lines,it.ocr.w,it.ocr.h,{decimal:$('fmt').value});it.edited={};it.checked=false;n++}else skip++}
+ $('errs').textContent=`Amounts re-read as you chose for ${n} receipt${n===1?'':'s'}. Your typed edits on those were cleared.`+(skip?` ${skip} restored receipt${skip===1?'':'s'} could not be re-read (pictures are not kept); fix them by hand.`:'');render()};
 $('pick').onclick=()=>$('file').click();
 $('file').onchange=e=>{add([...e.target.files]);e.target.value=''};
 const drop=$('drop');['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('over')}));
@@ -77,8 +80,8 @@ async function add(files){
  busy=true;$('prog').hidden=false;$('pick').disabled=true;
  for(let i=0;i<good.length;i++){const f=good[i];
   $('progtxt').textContent=(i===0&&!window.__warm?'Loading the reading model (first time only), then ':'')+`reading receipt ${i+1} of ${good.length}: ${f.name}`;$('barfill').style.width=(100*i/good.length)+'%';
-  try{const p=await prepare(f);const lines=await ocrBlob(p.blob);window.__warm=true;const ex=Extract.extract(lines,p.w,p.h);
-   items.push({name:f.name,url:URL.createObjectURL(f),ex,lines:lines.length,edited:{},checked:false})}
+  try{const p=await prepare(f);const lines=await ocrBlob(p.blob);window.__warm=true;const ex=Extract.extract(lines,p.w,p.h,{decimal:$('fmt').value});
+   items.push({name:f.name,url:URL.createObjectURL(f),ex,ocr:{lines,w:p.w,h:p.h},lines:lines.length,edited:{},checked:false})}
   catch(e){console.warn(e);errs.push(`"${f.name}": could not be read (${String(e.message||e).slice(0,80)}). Try a clearer picture.`)}
   render()}
  $('barfill').style.width='100%';$('prog').hidden=true;$('pick').disabled=false;busy=false;
@@ -91,8 +94,8 @@ function fieldState(it,k){const f=it.ex[k];if(it.edited[k]!==undefined){const ba
  if(!f)return k==='currency'?{val:'',warn:false}:{val:'',warn:true,why:'Not found. Type it in from the picture.'};
  const why=[...f.reasons];if(f.verified==='cash paid minus change'&&k==='total')why.length=0;if(k==='tax'){why.push('tax is the least reliable field (right about half the time in our test): always check it');if(it.ex.total&&f.value>=it.ex.total.value)why.push('tax is not smaller than the total')}
  if(f.conf<0.9)why.push('the reader was not sure of this text');
- if(k==='total'||k==='tax'){if(/[.,]/.test(f.text)&&!/[.,]\d{2}$/.test(f.text)||/^\d{1,3}[.,]\d{3}$/.test(f.text))why.push(`printed as "${f.text}": check if that is ${f.value} or a decimal`)}
- return {val:k==='total'||k==='tax'?String(f.value):f.value,warn:why.length>0,why:why.join('; '),ok:k==='total'&&f.verified?(f.verified==='cash paid minus change'?'Matches cash paid minus change.':'Matches '+f.verified+', but tax or service may have been missed: still check.'):''}}
+ if((k==='total'||k==='tax')&&$('fmt').value==='auto'){if(/[.,]/.test(f.text)&&!/[.,]\d{2}$/.test(f.text)||/^\d{1,3}[.,]\d{3}$/.test(f.text))why.push(`printed as "${f.text}": check if that is ${f.value} or a decimal`)}
+ return {val:k==='total'||k==='tax'?String(f.value):f.value,warn:why.length>0,why:why.join('; '),ok:k==='total'&&f.verified?(f.verified==='cash paid minus change'?'Matches cash paid minus change. That is a consistency check, not proof; still glance at it.':'Matches '+f.verified+', but tax or service may have been missed: still check.'):''}}
 function render(){
  $('resultwrap').hidden=!items.length;
  $('cards').innerHTML=items.map((it,n)=>{const S={};['vendor','date','total','tax','currency'].forEach(k=>S[k]=fieldState(it,k));
