@@ -4,3 +4,13 @@ Caveat: unseen by my pipeline, but may overlap the OCR model's training data. No
 Rules under test: extract.js v2 (sha1 fa79b04612), unchanged. A cash-vs-total candidate rule was tried on validation/dev and dropped (+1 on val, -1 on dev: no net gain).
 Exclusions declared up front: receipts whose truth total is missing or not parseable as a number (reported separately, not counted in the denominator).
 Metrics: exact total match; wrong-and-not-flagged count; flagged count; tax exact where truth tax exists.
+
+---- Second plan, written 2026-10-14 00:17 IST before any OCR/score on this set ----
+Set: CORD v2 train split rows 100-199 (u100-u199). Not used for tuning, not looked at.
+Rules under test: extract.js v3, sha1 89ef6c6a7e, frozen now (no edits after this line before scoring).
+Compared against: v2 (sha1 fa79b04612) on the same OCR output.
+Rule changes v2 -> v3: glue split thousands boxes; ":" as thousands mark; TL and "resto" labels; subtotal cross-check only when tax or service was read; total + tax/service printed elsewhere; total-row cash vs change; cash minus change on a cash/change row.
+Tuned on (so not held out): train rows 0-99, validation split, CORD test rows 0-99.
+Exclusions declared up front: truth total missing or unparseable (u113, u122 have none).
+Caveat: unseen by my pipeline; the OCR model may have seen CORD train images.
+Metrics: totals exact, flagged, wrong-and-not-flagged, tax exact.
